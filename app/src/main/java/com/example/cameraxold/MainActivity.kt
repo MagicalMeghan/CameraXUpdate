@@ -22,24 +22,26 @@ import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.ExecutorService
 
-private const val REQUEST_CODE_PERMISSIONS = 10
+// Helper type used for image analysis callbacks
 typealias LumaListener = (luma: Double) -> Unit
-// This is an array of all the permission specified in the manifest.
-private val REQUIRED_PERMISSIONS = arrayOf(Manifest.permission.CAMERA)
+
+/**
+ * TODO: docs explaining the high-level purpose and functionality of activity
+ */
 class MainActivity : AppCompatActivity() {
     private var preview: Preview? = null
     private var imageCapture: ImageCapture? = null
     private var imageAnalyzer: ImageAnalysis? = null
     private var camera: Camera? = null
     private var lensFacing: Int = CameraSelector.LENS_FACING_BACK
-    private lateinit var outputDirectory: File
 
+    private lateinit var viewFinder: PreviewView
+    private lateinit var outputDirectory: File
     private lateinit var cameraExecutor: ExecutorService
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
-
         viewFinder = findViewById(R.id.view_finder)
 
         // Request camera permissions
@@ -47,56 +49,69 @@ class MainActivity : AppCompatActivity() {
             viewFinder.post { startCamera() }
         } else {
             ActivityCompat.requestPermissions(
-                this, REQUIRED_PERMISSIONS, REQUEST_CODE_PERMISSIONS)
+                    this, REQUIRED_PERMISSIONS, REQUEST_CODE_PERMISSIONS)
         }
-        outputDirectory = getOutputDirectory(this)
+
+        // Setup the listener for take photo button
+        findViewById<ImageButton>(R.id.camera_capture_button).setOnClickListener { takePhoto() }
+
+        // Infer the output directory using a helper function
+        outputDirectory = getOutputDirectory()
+
+        // This is where all camera operations will take place
+        // Don't forget to stop this executor upon exit in a production app
         cameraExecutor = Executors.newSingleThreadExecutor()
-        takePhoto()
     }
 
-    fun getOutputDirectory(context: Context): File {
-        val appContext = context.applicationContext
-        val mediaDir = context.externalMediaDirs.firstOrNull()?.let {
-            File(it, appContext.resources.getString(R.string.app_name)).apply { mkdirs() } }
+    /**
+     * Default output directory as the first external media volume, otherwise
+     * use the app's internal files directory.
+     */
+    fun getOutputDirectory(): File {
+        val mediaDir = externalMediaDirs.firstOrNull()?.let {
+            File(it, resources.getString(R.string.app_name)).apply { mkdirs() } }
         return if (mediaDir != null && mediaDir.exists())
-            mediaDir else appContext.filesDir
+            mediaDir else filesDir
     }
 
+    /**
+     * TODO: docs explaining step-by-step what the function does
+     */
     private fun takePhoto() {
-        findViewById<ImageButton>(R.id.camera_capture_button).setOnClickListener {
-            // Get a stable reference of the modifiable image capture use case
-            imageCapture?.let { imageCapture ->
 
-                // Create output file to hold the image
-                val photoFile = createFile(outputDirectory, FILENAME, PHOTO_EXTENSION)
+        // Get a stable reference of the modifiable image capture use case
+        val imageCapture = imageCapture ?: return
 
+        // Create timestamped output file to hold the image
+        val photoFile = File(
+                outputDirectory,
+                SimpleDateFormat(FILENAME_FORMAT, Locale.US
+                ).format(System.currentTimeMillis()) + ".jpg")
 
-                // Create output options object which contains file + metadata
-                val outputOptions = ImageCapture.OutputFileOptions.Builder(photoFile)
-                    .build()
+        // Create output options object which contains file + metadata
+        val outputOptions = ImageCapture.OutputFileOptions.Builder(photoFile).build()
 
-                // Setup image capture listener which is triggered after photo has been taken
-                imageCapture.takePicture(
-                    outputOptions, cameraExecutor, object : ImageCapture.OnImageSavedCallback {
-                        override fun onError(exc: ImageCaptureException) {
-                            Log.e(TAG, "Photo capture failed: ${exc.message}", exc)
-                        }
+        // Setup image capture listener which is triggered after photo has been taken
+        imageCapture.takePicture(
+            outputOptions, cameraExecutor, object : ImageCapture.OnImageSavedCallback {
+                override fun onError(exc: ImageCaptureException) {
+                    Log.e(TAG, "Photo capture failed: ${exc.message}", exc)
+                }
 
-                        override fun onImageSaved(output: ImageCapture.OutputFileResults) {
-                            val savedUri = output.savedUri ?: Uri.fromFile(photoFile)
-                            Log.d(TAG, "Photo capture succeeded: $savedUri")
-                        }
-                    })
-            }
-        }
+                override fun onImageSaved(output: ImageCapture.OutputFileResults) {
+                    val savedUri = output.savedUri ?: Uri.fromFile(photoFile)
+                    val msg = "Photo capture succeeded: $savedUri"
+                    Toast.makeText(baseContext, msg, Toast.LENGTH_SHORT).show()
+                    Log.d(TAG, msg)
+                }
+            })
     }
 
-    private lateinit var viewFinder: PreviewView
-
+    /**
+     * TODO: docs explaining step-by-step what the function does
+     */
     private fun startCamera() {
-        // TODO: Implement CameraX operations
-        DisplayMetrics().also { viewFinder.display.getRealMetrics(it) }
-        val cameraSelector = CameraSelector.Builder().requireLensFacing(lensFacing).build()
+        // TODO: docs explaining camera initialization
         val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
         cameraProviderFuture.addListener(Runnable {
 
@@ -119,13 +134,21 @@ class MainActivity : AppCompatActivity() {
                     })
                 }
 
-            cameraProvider.unbindAll()
+            val cameraSelector = CameraSelector.Builder().requireLensFacing(lensFacing).build()
 
             try {
+                // It is good practice to make sure that no other use cases
+                // are currently bound to our camera provider
+                cameraProvider.unbindAll()
+
+                // Bind all of our use cases to the camera provider using
+                // this activity as the lifecycle owner
                 camera = cameraProvider.bindToLifecycle(
                     this, cameraSelector, preview, imageCapture, imageAnalyzer)
             } catch(exc: Exception) {
-                Log.e("camera", "Use case binding failed", exc)
+                // This is a fatal error, you probably want to display
+                // something in the UI for users to take action in production
+                Log.e(TAG, "Use case binding failed", exc)
             }
 
         }, ContextCompat.getMainExecutor(this))
@@ -138,29 +161,23 @@ class MainActivity : AppCompatActivity() {
             if (allPermissionsGranted()) {
                 viewFinder.post { startCamera() }
             } else {
-                Toast.makeText(this,
-                    "Permissions not granted by the user.",
-                    Toast.LENGTH_SHORT).show()
+                // In a production application, you should be able to handle
+                // this more gracefully, here we just exit to keep it simple
                 finish()
             }
         }
     }
 
+    /** Helper function used to check if all permissions have been granted */
     private fun allPermissionsGranted() = REQUIRED_PERMISSIONS.all {
         ContextCompat.checkSelfPermission(
             baseContext, it) == PackageManager.PERMISSION_GRANTED
     }
 
-    private class LuminosityAnalyzer(listener: LumaListener? = null) : ImageAnalysis.Analyzer {
-        private val frameRateWindow = 8
-        private val frameTimestamps = ArrayDeque<Long>(5)
-        private val listeners = ArrayList<LumaListener>().apply { listener?.let { add(it) } }
-        private var lastAnalyzedTimestamp = 0L
-        var framesPerSecond: Double = -1.0
-            private set
-
-
-//        fun onFrameAnalyzed(listener: LumaListener) = listeners.add(listener)
+    /**
+     * TODO: docs explaining what this class does
+     */
+    private class LuminosityAnalyzer(private val listener: LumaListener) : ImageAnalysis.Analyzer {
 
         private fun ByteBuffer.toByteArray(): ByteArray {
             rewind()    // Rewind the buffer to zero
@@ -170,45 +187,27 @@ class MainActivity : AppCompatActivity() {
         }
 
         override fun analyze(image: ImageProxy) {
-            if (listeners.isEmpty()) {
-                image.close()
-                return
-            }
 
-            val currentTime = System.currentTimeMillis()
-            frameTimestamps.push(currentTime)
-
-            while (frameTimestamps.size >= frameRateWindow) frameTimestamps.removeLast()
-            val timestampFirst = frameTimestamps.peekFirst() ?: currentTime
-            val timestampLast = frameTimestamps.peekLast() ?: currentTime
-            framesPerSecond = 1.0 / ((timestampFirst - timestampLast) /
-                frameTimestamps.size.coerceAtLeast(1).toDouble()) * 1000.0
-
-            lastAnalyzedTimestamp = frameTimestamps.first
-
+            // Use the Y plane of the image buffer to compute average luma
             val buffer = image.planes[0].buffer
-
             val data = buffer.toByteArray()
-
             val pixels = data.map { it.toInt() and 0xFF }
-
             val luma = pixels.average()
 
-            listeners.forEach { it(luma) }
+            // Update the provided listener with the latest luma value
+            listener(luma)
 
+            // Always remember to close the image, otherwise we will stall!
             image.close()
         }
     }
 
     companion object {
-
         private const val TAG = "CameraXBasic"
-        private const val FILENAME = "yyyy-MM-dd-HH-mm-ss-SSS"
-        private const val PHOTO_EXTENSION = ".jpg"
+        private const val FILENAME_FORMAT = "yyyy-MM-dd-HH-mm-ss-SSS"
+        private const val REQUEST_CODE_PERMISSIONS = 10
 
-        /** Helper function used to create a timestamped file */
-        private fun createFile(baseFolder: File, format: String, extension: String) =
-            File(baseFolder, SimpleDateFormat(format, Locale.US)
-                .format(System.currentTimeMillis()) + extension)
+        // This is an array of all the permission specified in the manifest.
+        private val REQUIRED_PERMISSIONS = arrayOf(Manifest.permission.CAMERA)
     }
 }
