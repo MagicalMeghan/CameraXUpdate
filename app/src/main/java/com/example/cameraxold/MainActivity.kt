@@ -93,7 +93,7 @@ class MainActivity : AppCompatActivity() {
 
         // Setup image capture listener which is triggered after photo has been taken
         imageCapture.takePicture(
-            outputOptions, cameraExecutor, object : ImageCapture.OnImageSavedCallback {
+            outputOptions, ContextCompat.getMainExecutor(this), object : ImageCapture.OnImageSavedCallback {
                 override fun onError(exc: ImageCaptureException) {
                     Log.e(TAG, "Photo capture failed: ${exc.message}", exc)
                 }
