@@ -107,20 +107,13 @@ class MainActivity : AppCompatActivity() {
             })
     }
 
-    /**
-     * TODO: docs explaining step-by-step what the function does
-     */
     private fun startCamera() {
-        // TODO: docs explaining camera initialization
         val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
         cameraProviderFuture.addListener(Runnable {
-
             val cameraProvider: ProcessCameraProvider = cameraProviderFuture.get()
 
             preview = Preview.Builder()
                 .build()
-
-            preview?.setSurfaceProvider(viewFinder.previewSurfaceProvider)
 
             imageCapture = ImageCapture.Builder()
                 .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
@@ -137,22 +130,15 @@ class MainActivity : AppCompatActivity() {
             val cameraSelector = CameraSelector.Builder().requireLensFacing(lensFacing).build()
 
             try {
-                // It is good practice to make sure that no other use cases
-                // are currently bound to our camera provider
                 cameraProvider.unbindAll()
-
-                // Bind all of our use cases to the camera provider using
-                // this activity as the lifecycle owner
                 camera = cameraProvider.bindToLifecycle(
                     this, cameraSelector, preview, imageCapture, imageAnalyzer)
+                preview?.setSurfaceProvider(viewFinder.createSurfaceProvider(camera?.cameraInfo))
             } catch(exc: Exception) {
-                // This is a fatal error, you probably want to display
-                // something in the UI for users to take action in production
                 Log.e(TAG, "Use case binding failed", exc)
             }
 
         }, ContextCompat.getMainExecutor(this))
-
     }
 
     override fun onRequestPermissionsResult(
