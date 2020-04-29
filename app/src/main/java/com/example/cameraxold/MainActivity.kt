@@ -109,16 +109,21 @@ class MainActivity : AppCompatActivity() {
 
     private fun startCamera() {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
+        
         cameraProviderFuture.addListener(Runnable {
+            // Used to bind the lifecycle of cameras to the lifecycle owner
             val cameraProvider: ProcessCameraProvider = cameraProviderFuture.get()
 
+            // Preview
             preview = Preview.Builder()
                 .build()
 
+            // Image Capture
             imageCapture = ImageCapture.Builder()
                 .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
                 .build()
 
+            // Image Analyzer
             imageAnalyzer = ImageAnalysis.Builder()
                 .build()
                 .also {
@@ -127,10 +132,14 @@ class MainActivity : AppCompatActivity() {
                     })
                 }
 
+            // Specify which way the lens is facing
             val cameraSelector = CameraSelector.Builder().requireLensFacing(lensFacing).build()
 
             try {
+                // Unbind use cases before rebinding
                 cameraProvider.unbindAll()
+                
+                // Bind use cases to camera
                 camera = cameraProvider.bindToLifecycle(
                     this, cameraSelector, preview, imageCapture, imageAnalyzer)
                 preview?.setSurfaceProvider(viewFinder.createSurfaceProvider(camera?.cameraInfo))
